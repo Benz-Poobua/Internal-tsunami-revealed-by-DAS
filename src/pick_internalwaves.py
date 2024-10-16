@@ -75,6 +75,20 @@ def onclick(event):
             writer = csv.writer(file)
             writer.writerows([[dt, y]])  # Write the new data
 
+        # Add a red dot at the clicked position
+        ax.plot(x, y, 'ro')  # 'ro' for red dot
+        plt.draw()  # Update the plot
+
+
+def on_key(event):
+    if event.key == 'delete':  # Check if the pressed key is 'delete'
+        if markers:  # Check if there are markers to remove
+            last_marker = markers.pop()  # Remove the last marker from the list
+            last_marker.remove()  # Remove it from the plot
+            plt.draw()  # Update the plot
+
+
+
 # Plot
 fig, ax = plt.subplots(figsize=(2.5*6.4,1.5*4.8))
 
@@ -97,7 +111,8 @@ cbar = fig.colorbar(im, pad=0.01)
 cbar.set_label('Phase [rad]')
 
 # Connect the event handler to the figure
-cid = fig.canvas.mpl_connect('button_press_event', onclick)
+cid_click = fig.canvas.mpl_connect('button_press_event', onclick)
+cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
 
 # Show the plot
 plt.show()
