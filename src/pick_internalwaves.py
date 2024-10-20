@@ -1,4 +1,4 @@
-# import packages
+# import necessary dependencies
 import h5py, scipy, datetime, csv, sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,24 +7,26 @@ import pandas as pd
 sys.path.append("../utils/")
 import DASfuncs
 
-# get files
-t_start = datetime.datetime(2023,8,10)
-t_end = datetime.datetime(2023,8,11)
+# Get files for data collecting
+# Change the start and end dates as needed
+t_start = datetime.datetime(2023,8,11)
+t_end = datetime.datetime(2023,8,12)
 path = '../data/DAS/data_1Hz'
+position_filename = f'../data/phase_time_series_lower/positions_{t_start.day}_{t_end.day}.csv'
 files = DASfuncs.get_Onyx_h5(path, t_start, t_end)
 print('{} files in directory'.format(len(files)))
 
-# read the data
+# Read the data
 time_read, data_read, attrs_read = DASfuncs.read_Onyx_h5_to_list(files, cha_start=None, cha_end=None, t_start=t_start, t_end=t_end, verbose=True)
-# concatenate files
+# Concatenate files
 t_rec, data_rec, attrs = DASfuncs.comb_Onyx_data(time_read, data_read, attrs_read)
 
-# fill contiuous parts of data into array
+# Fill contiuous parts of data into array
 time_list, data_list = DASfuncs.split_continuous_data(t_rec, data_rec, attrs)
-# fill data gaps in array
+# Fill data gaps in array
 times_filled, data_filled = DASfuncs.fill_data_gaps(time_list, data_list, attrs, t_format='datetime')
 
-# filtering
+# Filter data
 sos = scipy.signal.butter(2, 0.1,'lowpass', fs=attrs['PulseRate'], output='sos')
 filt_list = [DASfuncs.apply_sosfiltfilt_with_nan(sos, arr, axis=0) for arr in data_list]
 
@@ -36,7 +38,7 @@ dx = attrs['SpatialSamplingInterval']
 chas = np.arange(attrs['StartLocusIndex'], attrs['StartLocusIndex']+attrs['NumberOfLoci'])
 dists = chas*dx
 
-# Slice data in time and space
+# Slice data in time and space (m)
 start_dist = 2820
 end_dist = 3150
 
@@ -55,42 +57,39 @@ plot_dists = dists[d_idx_start:d_idx_end]
 data_norm = plot_arr #- np.nanmedian(plot_arr, axis=0)
 # data_norm = data_norm / np.std(data_norm, axis=0)[None,:]
 
-import csv
+
+# Add a flag to indicate the hold state
+on_hold = False
 
 # Initialize an empty list to store cursor positions
 positions = []
 
+fig, ax = plt.subplots(figsize=(2.5*6.4,1.5*4.8))
+
 # Define the event handler for mouse clicks
 def onclick(event):
-    # Get the x and y coordinates of the click
-    x, y = event.xdata, event.ydata
-    if x is not None and y is not None:  # Check if the click is within the plot area
-        # Convert x from float to datetime
-        dt = mdates.num2date(x).strftime('%Y-%m-%d %H:%M:%S')
-        positions.append([dt, y])
-        print(f'Position saved: datetime={dt}, y={y}')
+    if not on_hold:
+        # Get the x and y coordinates of the click
+        x, y = event.xdata, event.ydata
+        if x is not None and y is not None:  # Check if the click is within the plot area
+            # Convert x from float to datetime
+            dt = mdates.num2date(x).strftime('%Y-%m-%d %H:%M:%S')
+            positions.append([dt, y])
+            print(f'Position saved: datetime={dt}, y={y}')
         
-        # Save the positions to a CSV file
-        with open('../data/phase_time_series/positions.csv', mode='a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows([[dt, y]])  # Write the new data
+            # Save the positions to a CSV file
+            with open(position_filename, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows([[dt, y]])  # Write the new data
 
         # Add a red dot at the clicked position
-        ax.plot(x, y, 'ro')  # 'ro' for red dot
-        plt.draw()  # Update the plot
+        ax.plot(x, y, 'r.')
+        plt.draw()  
 
-
-def on_key(event):
-    if event.key == 'delete':  # Check if the pressed key is 'delete'
-        if markers:  # Check if there are markers to remove
-            last_marker = markers.pop()  # Remove the last marker from the list
-            last_marker.remove()  # Remove it from the plot
-            plt.draw()  # Update the plot
-
-
-
-# Plot
-fig, ax = plt.subplots(figsize=(2.5*6.4,1.5*4.8))
+def on_hold(event):
+  global on_hold  # Modify the global variable
+  on_hold = not on_hold  # Toggle the hold state on space key press
+  print(f"Hold state: {'ON' if on_hold else 'OFF'}")
 
 im = ax.imshow(data_norm.T, aspect='auto',
              origin='lower',
@@ -112,7 +111,8 @@ cbar.set_label('Phase [rad]')
 
 # Connect the event handler to the figure
 cid_click = fig.canvas.mpl_connect('button_press_event', onclick)
-cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
+# Connect the on_hold function to space key press 
+cid_hold = fig.canvas.mpl_connect('key_press_event', on_hold)
 
 # Show the plot
 plt.show()
