@@ -7,112 +7,105 @@ import pandas as pd
 sys.path.append("../utils/")
 import DASfuncs
 
-# Get files for data collecting
-# Change the start and end dates as needed
-t_start = datetime.datetime(2023,8,11)
-t_end = datetime.datetime(2023,8,12)
+# Set paths and date range for DAS data
+t_start = datetime.datetime(2023,8,24)
+t_end = datetime.datetime(2023,8,25)
 path = '../data/DAS/data_1Hz'
 position_filename = f'../data/phase_time_series_lower/positions_{t_start.day}_{t_end.day}.csv'
 files = DASfuncs.get_Onyx_h5(path, t_start, t_end)
 print('{} files in directory'.format(len(files)))
 
-# Read the data
+# Load DAS data
 time_read, data_read, attrs_read = DASfuncs.read_Onyx_h5_to_list(files, cha_start=None, cha_end=None, t_start=t_start, t_end=t_end, verbose=True)
-# Concatenate files
 t_rec, data_rec, attrs = DASfuncs.comb_Onyx_data(time_read, data_read, attrs_read)
-
-# Fill contiuous parts of data into array
 time_list, data_list = DASfuncs.split_continuous_data(t_rec, data_rec, attrs)
-# Fill data gaps in array
 times_filled, data_filled = DASfuncs.fill_data_gaps(time_list, data_list, attrs, t_format='datetime')
-
-# Filter data
 sos = scipy.signal.butter(2, 0.1,'lowpass', fs=attrs['PulseRate'], output='sos')
 filt_list = [DASfuncs.apply_sosfiltfilt_with_nan(sos, arr, axis=0) for arr in data_list]
-
 times_filled, data_filled = DASfuncs.fill_data_gaps(time_list, filt_list, attrs, t_format='datetime')
-
 data_arr = data_filled
-times = DASfuncs.sintela_to_datetime(t_rec)  # Convert timestamp to datetime
+times = DASfuncs.sintela_to_datetime(t_rec)
 dx = attrs['SpatialSamplingInterval']
 chas = np.arange(attrs['StartLocusIndex'], attrs['StartLocusIndex']+attrs['NumberOfLoci'])
 dists = chas*dx
 
-# Slice data in time and space (m)
-start_dist = 2820
-end_dist = 3150
+# Select DAS slice
+start_dist, end_dist = 2820, 3150
+t_idx_start, t_idx_end = np.argmin(np.abs(times-t_start)), np.argmin(np.abs(times-t_end))
+d_idx_start, d_idx_end = np.argmin(np.abs(dists-start_dist)), np.argmin(np.abs(dists-end_dist))
+plot_arr_DAS = data_arr[t_idx_start:t_idx_end, d_idx_start:d_idx_end]
+plot_times_DAS = times[t_idx_start:t_idx_end]
+plot_dists_DAS = dists[d_idx_start:d_idx_end]
+data_norm_DAS = plot_arr_DAS
 
-start_time = t_start
-end_time = t_end
+# Load DTS data
+infile = '../data/DTS/temp_cal_valid_cable_rmnoise.csv'
+df_temp = pd.read_csv(infile, index_col=0)
+df_temp.columns = pd.to_datetime(df_temp.columns)
+temp_arr = df_temp.to_numpy().T
+times_DTS = pd.to_datetime(df_temp.columns)
+dists_DTS = df_temp.index.to_numpy()
+t_idx_start_DTS, t_idx_end_DTS = np.argmin(np.abs(times_DTS-t_start)), np.argmin(np.abs(times_DTS-t_end))
+d_idx_start_DTS, d_idx_end_DTS = np.argmin(np.abs(dists_DTS-start_dist)), np.argmin(np.abs(dists_DTS-end_dist))
+plot_arr_DTS = temp_arr[t_idx_start_DTS:t_idx_end_DTS, d_idx_start_DTS:d_idx_end_DTS]
+plot_times_DTS = times_DTS[t_idx_start_DTS:t_idx_end_DTS]
+plot_dists_DTS = dists_DTS[d_idx_start_DTS:d_idx_end_DTS]
 
-t_idx_start = np.argmin(np.abs(times-start_time))
-t_idx_end = np.argmin(np.abs(times-end_time))
-d_idx_start = np.argmin(np.abs(dists-start_dist))
-d_idx_end = np.argmin(np.abs(dists-end_dist))
+# Initialize plotting
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
-plot_arr = data_arr[t_idx_start:t_idx_end, d_idx_start:d_idx_end]
-plot_times = times[t_idx_start:t_idx_end]
-plot_dists = dists[d_idx_start:d_idx_end]
+# Plot DAS
+im_DAS = ax1.imshow(data_norm_DAS.T, aspect='auto', origin='lower', vmin=np.percentile(data_norm_DAS[~np.isnan(data_norm_DAS)], 5), vmax=np.percentile(data_norm_DAS[~np.isnan(data_norm_DAS)], 95), extent=[plot_times_DAS[0], plot_times_DAS[-1], plot_dists_DAS[0], plot_dists_DAS[-1]], cmap='RdBu_r')
+ax1.set_title('DAS Data')
+ax1.set_ylabel('Optical Distance along Cable [m]')
+cbar_DAS = fig.colorbar(im_DAS, ax=ax1, pad=0.01)
+cbar_DAS.set_label('Phase [rad]')
+ax1.invert_yaxis()
 
-data_norm = plot_arr #- np.nanmedian(plot_arr, axis=0)
-# data_norm = data_norm / np.std(data_norm, axis=0)[None,:]
+# Plot DTS
+im_DTS = ax2.imshow(plot_arr_DTS.T, aspect='auto', origin='lower', vmin=np.percentile(plot_arr_DTS[~np.isnan(plot_arr_DTS)],1), vmax=np.percentile(plot_arr_DTS[~np.isnan(plot_arr_DTS)],99), extent=[plot_times_DTS[0], plot_times_DTS[-1], plot_dists_DTS[0], plot_dists_DTS[-1]], cmap='plasma')
+ax2.set_title('DTS Data')
+ax2.set_ylabel('Optical Distance along Cable [m]')
+ax2.set_xlabel('Time')
+cbar_DTS = fig.colorbar(im_DTS, ax=ax2, pad=0.01)
+cbar_DTS.set_label('Temperature [°C]')
+ax2.invert_yaxis()
 
-
-# Add a flag to indicate the hold state
+# Initialize positions list and hold flag
 on_hold = False
-
-# Initialize an empty list to store cursor positions
 positions = []
 
-fig, ax = plt.subplots(figsize=(2.5*6.4,1.5*4.8))
-
-# Define the event handler for mouse clicks
+# Click handler for data collection
 def onclick(event):
-    if not on_hold:
-        # Get the x and y coordinates of the click
+    if event.inaxes == ax1 and not on_hold:
         x, y = event.xdata, event.ydata
-        if x is not None and y is not None:  # Check if the click is within the plot area
-            # Convert x from float to datetime
+        if x is not None and y is not None:
             dt = mdates.num2date(x).strftime('%Y-%m-%d %H:%M:%S')
             positions.append([dt, y])
             print(f'Position saved: datetime={dt}, y={y}')
-        
-            # Save the positions to a CSV file
             with open(position_filename, mode='a', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerows([[dt, y]])  # Write the new data
+                writer.writerows([[dt, y]])
 
-        # Add a red dot at the clicked position
-        ax.plot(x, y, 'r.')
-        plt.draw()  
+        # Add a red dot at the clicked position on both DAS and DTS plots
+        ax1.plot(x, y, 'r.')
+        ax2.plot(x, y, 'r.')
+        plt.draw()
 
-def on_hold(event):
-  global on_hold  # Modify the global variable
-  on_hold = not on_hold  # Toggle the hold state on space key press
-  print(f"Hold state: {'ON' if on_hold else 'OFF'}")
+# Cursor movement handler to synchronize cursor across plots
+def on_motion(event):
+    if event.inaxes == ax1:
+        ax2.axvline(event.xdata, color='gray', linestyle='--', lw=0.5)
+        plt.draw()
 
-im = ax.imshow(data_norm.T, aspect='auto',
-             origin='lower',
-             vmin=np.percentile(data_norm[~np.isnan(data_norm)],5),
-             vmax=np.percentile(data_norm[~np.isnan(data_norm)],95),
-             extent=[plot_times[0], plot_times[-1],
-                  plot_dists[0], plot_dists[-1]],
-             cmap='RdBu_r',
-             # interpolation='none',
-               zorder=0
-             )
+def on_hold_toggle(event):
+    global on_hold
+    on_hold = not on_hold
+    print(f"Hold state: {'ON' if on_hold else 'OFF'}")
 
-ax.set_ylabel('Optical Distance along Cable [m]')
-ax.set_xlabel('Time')
-ax.set_title('Event after  {}'.format(plot_times[0].strftime("%Y/%m/%dT%H:%M:%S")))
-
-cbar = fig.colorbar(im, pad=0.01)
-cbar.set_label('Phase [rad]')
-
-# Connect the event handler to the figure
+# Connect events
 cid_click = fig.canvas.mpl_connect('button_press_event', onclick)
-# Connect the on_hold function to space key press 
-cid_hold = fig.canvas.mpl_connect('key_press_event', on_hold)
+cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+cid_hold = fig.canvas.mpl_connect('key_press_event', on_hold_toggle)
 
-# Show the plot
 plt.show()
