@@ -36,7 +36,7 @@ def data_concat(file_list):
 
     # process each file in the list
     for file_name in file_list:
-        file_path = os.path.join(rrpath, 'data', 'phase_time_series',file_name)
+        file_path = os.path.join(rrpath, 'data', 'phase_time_series_lower',file_name) ## change folder if needed
         processed_df = read_and_process(file_path)
         processed_dfs.append(processed_df)
 
@@ -89,7 +89,12 @@ def compute_fft(phases_df):
 
 def peak_iden(positive_frequencies):
     
-    peaks, _ = find_peaks(positive_frequencies)
+    f_min = 1/(60*60)
+    f_max = 1/(5*50)
+
+    freq_mask = (positive_frequencies >= f_min) & (positive_frequencies <= f_max)
+
+    peaks, _ = find_peaks(freq_mask, threshold=np.log10(3))
 
     top_peaks = peaks[:3] 
 
