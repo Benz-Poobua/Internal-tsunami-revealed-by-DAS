@@ -8,8 +8,8 @@ sys.path.append("../utils/")
 import DASfuncs
 
 # Set paths and date range for DAS data
-t_start = datetime.datetime(2023,8,24)
-t_end = datetime.datetime(2023,8,25)
+t_start = datetime.datetime(2023,8,17)
+t_end = datetime.datetime(2023,8,18)
 path = '../data/DAS/data_1Hz'
 position_filename = f'../data/phase_time_series_lower/positions_{t_start.day}_{t_end.day}.csv'
 files = DASfuncs.get_Onyx_h5(path, t_start, t_end)
